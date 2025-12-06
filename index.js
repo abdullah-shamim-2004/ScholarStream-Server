@@ -9,7 +9,7 @@ const port = process.env.PORT || 3000;
 app.use(express.json());
 app.use(cors());
 // Mongodb URL
-const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.ixbmwio.mongodb.net/?appName=Cluster0`; 
+const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.ixbmwio.mongodb.net/?appName=Cluster0`;
 
 // Create a MongoClient with a MongoClientOptions object to set the Stable API version
 const client = new MongoClient(uri, {
@@ -23,6 +23,41 @@ async function run() {
   try {
     // Connect the client to the server	(optional starting in v4.7)
     await client.connect();
+    const db = client.db("scholar_stream_db");
+    const userCollection = db.collection("users");
+
+    // User related API
+    app.post("/users", async (req, res) => {
+      try {
+        const user = req.body;
+        user.role = "student";
+        user.createdAt = new Date();
+        const email = user.email;
+
+        // Check user exist
+        const userExist = await userCollection.findOne({ email });
+
+        if (userExist) {
+          return res.status(409).send({
+            success: false,
+            message: "User already exists",
+          });
+        }
+        // Insert user
+        const result = await userCollection.insertOne(user);
+        res.status(201).send({
+          success: true,
+          message: "User created successfully",
+          insertedId: result.insertedId,
+        });
+      } catch (error) {
+        res.status(500).send({
+          success: false,
+          message: error.message,
+        });
+      }
+    });
+
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
     console.log(
