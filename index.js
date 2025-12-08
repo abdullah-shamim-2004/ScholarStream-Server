@@ -2,7 +2,7 @@ const express = require("express");
 const app = express();
 require("dotenv").config();
 const cors = require("cors");
-const { MongoClient, ServerApiVersion } = require("mongodb");
+const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const port = process.env.PORT || 3000;
 
 // Middleware
@@ -94,6 +94,60 @@ async function run() {
         }
         const result = await cursor.toArray();
         res.status(201).json(result);
+      } catch (error) {
+        res.status(500).send({
+          success: false,
+          message: error.message,
+        });
+      }
+    });
+    app.get("/scholarships/:id", async (req, res) => {
+      const id = req.params.id;
+      const result = await scholarCollection.findOne({ _id: new ObjectId(id) });
+      res.send(result);
+    });
+    app.delete("/scholarships/:id", async (req, res) => {
+      try {
+        const id = req.params.id;
+        if (!id) {
+          return res.status(204).send({
+            success: false,
+            message: "Don't find id ",
+          });
+        }
+        const result = await scholarCollection.deleteOne({
+          _id: new ObjectId(id),
+        });
+        res.status(200).send({
+          success: true,
+          message: result,
+        });
+      } catch (error) {
+        res.status(500).send({
+          success: false,
+          message: error.message,
+        });
+      }
+    });
+    app.put("/scholarships/:id", async (req, res) => {
+      try {
+        const id = req.params.id;
+        const updatedData = req.body;
+
+        const updateDoc = {
+          $set: updatedData,
+        };
+
+        const result = await scholarCollection.updateOne(
+          { _id: new ObjectId(id) },
+          updateDoc
+        );
+
+        res.send({
+          success: true,
+          message: "Scholarship updated successfully",
+          result,
+        });
       } catch (error) {
         res.status(500).send({
           success: false,
