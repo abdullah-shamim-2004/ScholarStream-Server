@@ -203,6 +203,7 @@ async function run() {
         res.status(500).send({ message: "Stripe session error" });
       }
     });
+    // If payment is succesfull , then store the data
     app.get("/payment-verify", async (req, res) => {
       try {
         const sessionId = req.query.session_id;
@@ -230,6 +231,7 @@ async function run() {
         if (session.payment_status !== "paid") {
           return res.status(400).json({
             success: false,
+            paymentStatus: "unpaid",
             message: "Payment not completed.",
           });
         }
@@ -258,12 +260,14 @@ async function run() {
             existedPayment: paymentExist,
           });
         }
+
         // Extract metadata
         const scholarshipId = session.metadata.scholarshipId;
         const scholarshipName = session.metadata.scholarshipName;
         const universityName = session.metadata.universityName;
-        // const userId = session.metadata.userId;
+
         // Prepare application object
+        const isPaid = session.payment_status === "paid";
         const applicationData = {
           // userId,
           userEmail: session.customer_details?.email || session.customer_email,
@@ -272,8 +276,8 @@ async function run() {
           universityName,
           transactionId,
           amount: session.amount_total / 100,
-          currency: session.currency,
-          paymentStatus: "paid",
+          currency: session.currency || "USD",
+          paymentStatus: isPaid ? "paid" : "unpaid",
           ApplicationStatus: "pending",
           appliedAt: new Date(),
           paidAt: new Date(),
@@ -294,29 +298,88 @@ async function run() {
           applicationId: insertApplication.insertedId,
           paymentRecord: paymentResult,
         });
-        // Retrieve paymentIntent for transaction id
-        // const paymentIntent = await stripe.paymentIntents.retrieve(
-        //   session.payment_intent
-        // );
-
-        // Prepare data to return
-        // const paymentData = {
-        //   transactionId: paymentIntent.id,
-        //   amount: session.amount_total / 100,
-        //   currency: session.currency,
-        //   scholarshipName: session.metadata.scholarshipName,
-        //   universityName: session.metadata.universityName,
-        //   userEmail: session.customer_details.email,
-        //   customerName: session.customer_details.name,
-        //   paidAt: new Date(),
-        // };
-
-        // res.status(200).json(paymentData);
       } catch (error) {
         console.log("Payment verify error:", error);
         res.status(500).json({
           message: "Failed to verify payment",
           error: error.message,
+        });
+      }
+    });
+    // If payment is failed then store the data as pending
+    app.post("/payment-failed-record", async (req, res) => {
+      try {
+        const {
+          scholarshipId,
+          scholarshipName,
+          universityName,
+          userEmail,
+          amount,
+        } = req.body;
+
+        //  Prevent duplicate application
+
+        const applicationExist = await applicationCollection.findOne({
+          scholarshipId,
+          userEmail,
+        });
+
+        if (applicationExist) {
+          return res.status(409).json({
+            success: false,
+            message: "Application already exists for this user",
+            existedApplication: applicationExist,
+          });
+        }
+
+        //  Create unpaid application entry
+
+        const applicationData = {
+          userEmail,
+          scholarshipId,
+          scholarshipName,
+          universityName,
+          amount,
+          paymentStatus: "unpaid",
+          ApplicationStatus: "pending",
+          appliedAt: new Date(),
+        };
+
+        const result = await applicationCollection.insertOne(applicationData);
+
+        return res.status(201).json({
+          success: true,
+          message: "Unpaid application saved successfully",
+          applicationId: result.insertedId,
+        });
+      } catch (error) {
+        return res.status(500).json({
+          success: false,
+          message: error.message,
+        });
+      }
+    });
+    // My application api
+    app.get("/my-applications", async (req, res) => {
+      try {
+        const { userEmail } = req.query;
+        if (!userEmail) {
+          return res.status(404).json({
+            success: false,
+            message: "Email not found!",
+          });
+        }
+        const result = await applicationCollection
+          .find({ userEmail })
+          .toArray();
+        res.status(201).json({
+          success: true,
+          applications: result,
+        });
+      } catch (error) {
+        return res.status(400).json({
+          success: false,
+          message: error.message,
         });
       }
     });
