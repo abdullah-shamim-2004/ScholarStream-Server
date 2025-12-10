@@ -27,8 +27,9 @@ async function run() {
     const db = client.db("scholar_stream_db");
     const userCollection = db.collection("users");
     const scholarCollection = db.collection("scholarships");
-    const paymentCollection = db.collection("payments");
+    // const paymentCollection = db.collection("payments");
     const applicationCollection = db.collection("applications");
+    const reviewCollection = db.collection("reviews");
 
     // User related API
     app.post("/users", async (req, res) => {
@@ -168,6 +169,7 @@ async function run() {
           universityName,
           scholarshipId,
           studentEmail,
+          applicationId,
         } = req.body;
 
         const session = await stripe.checkout.sessions.create({
@@ -189,6 +191,7 @@ async function run() {
 
           metadata: {
             scholarshipId,
+            applicationId,
             scholarshipName,
             universityName,
           },
@@ -252,7 +255,9 @@ async function run() {
           });
         }
         // Check duplicate payment
-        const paymentExist = await paymentCollection.findOne({ transactionId });
+        const paymentExist = await applicationCollection.findOne({
+          transactionId,
+        });
         if (paymentExist) {
           return res.status(409).json({
             success: false,
@@ -263,9 +268,28 @@ async function run() {
 
         // Extract metadata
         const scholarshipId = session.metadata.scholarshipId;
+        const applicationId = session.metadata.applicationId;
         const scholarshipName = session.metadata.scholarshipName;
         const universityName = session.metadata.universityName;
-
+        if (applicationId) {
+          const applicationExist = await applicationCollection.findOne({
+            _id: new ObjectId(applicationId),
+          });
+          if (applicationExist) {
+            const updateDoc = {
+              $set: { paymentStatus: "paid", transactionId: transactionId },
+            };
+            const result = await applicationCollection.updateOne(
+              { _id: new ObjectId(applicationId) },
+              updateDoc
+            );
+            res.send({
+              success: true,
+              message: "Application updated successfully",
+              result,
+            });
+          }
+        }
         // Prepare application object
         const isPaid = session.payment_status === "paid";
         const applicationData = {
@@ -378,6 +402,59 @@ async function run() {
         });
       } catch (error) {
         return res.status(400).json({
+          success: false,
+          message: error.message,
+        });
+      }
+    });
+    app.delete("/my-applications/:id", async (req, res) => {
+      try {
+        const id = req.params.id;
+        const result = await applicationCollection.deleteOne({
+          _id: new ObjectId(id),
+        });
+        return res.status(201).json({
+          success: true,
+          result,
+        });
+      } catch (error) {
+        return res.status(4501).json({ error: error.message });
+      }
+    });
+    // Review releted api
+    app.post("/my-reviews", async (req, res) => {
+      try {
+        const {
+          scholarshipId,
+          universityName,
+          userName,
+          userEmail,
+          userImage,
+          rating,
+          comment,
+        } = req.body;
+
+        const reviewData = {
+          scholarshipId,
+          universityName,
+          userName,
+          userEmail,
+          userImage: userImage || null,
+          rating: Number(rating),
+          comment,
+          reviewDate: new Date(),
+        };
+
+        const result = await reviewCollection.insertOne(reviewData);
+
+        res.status(201).json({
+          success: true,
+          message: "Review added successfully",
+          insertedId: result.insertedId,
+        });
+      } catch (error) {
+        console.log("Review error:", error);
+        res.status(500).json({
           success: false,
           message: error.message,
         });
