@@ -514,6 +514,23 @@ async function run() {
         res.status(500).json({ success: false, message: error.message });
       }
     });
+    app.delete("/my-reviews/:id", async (req, res) => {
+      try {
+        const id = req.params.id;
+
+        const result = await reviewCollection.deleteOne({
+          _id: new ObjectId(id),
+        });
+
+        res.status(200).json({
+          success: true,
+          message: "Review deleted successfully",
+          result,
+        });
+      } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+      }
+    });
 
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
