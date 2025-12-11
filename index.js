@@ -27,7 +27,7 @@ async function run() {
     const db = client.db("scholar_stream_db");
     const userCollection = db.collection("users");
     const scholarCollection = db.collection("scholarships");
-    // const paymentCollection = db.collection("payments");
+    const paymentCollection = db.collection("payments");
     const applicationCollection = db.collection("applications");
     const reviewCollection = db.collection("reviews");
 
@@ -288,8 +288,10 @@ async function run() {
               message: "Application updated successfully",
               result,
             });
+            return;
           }
         }
+
         // Prepare application object
         const isPaid = session.payment_status === "paid";
         const applicationData = {
@@ -307,21 +309,23 @@ async function run() {
           paidAt: new Date(),
         };
         // Insert into applications collection
-        const insertApplication = await applicationCollection.insertOne(
-          applicationData
-        );
+        if (!applicationId) {
+          const insertApplication = await applicationCollection.insertOne(
+            applicationData
+          );
+          return res.status(200).json({
+            success: true,
+            message: "Payment verified & application saved",
+            applicationId: insertApplication.insertedId,
+          });
+        }
+
         // Insert into payment history collection
-        const paymentHistory = {
-          ...applicationData,
-          createdAt: new Date(),
-        };
-        const paymentResult = await paymentCollection.insertOne(paymentHistory);
-        return res.status(200).json({
-          success: true,
-          message: "Payment verified & application saved",
-          applicationId: insertApplication.insertedId,
-          paymentRecord: paymentResult,
-        });
+        // const paymentHistory = {
+        //   ...applicationData,
+        //   createdAt: new Date(),
+        // };
+        // const paymentResult = await paymentCollection.insertOne(paymentHistory);
       } catch (error) {
         console.log("Payment verify error:", error);
         res.status(500).json({
@@ -529,6 +533,35 @@ async function run() {
         });
       } catch (error) {
         res.status(500).json({ success: false, message: error.message });
+      }
+    });
+    // all application api
+    app.get("/all-applications", async (req, res) => {
+      try {
+        const result = await applicationCollection.find().toArray();
+        res.send({ success: true, applications: result });
+      } catch (error) {
+        res.status(500).send({ success: false, message: error.message });
+      }
+    });
+    // update application status
+    app.patch("/all-applications/:id", async (req, res) => {
+      try {
+        const id = req.params.id;
+        const { status, feedback } = req.body;
+        const updateField = {};
+        if (status) updateField.ApplicationStatus = status;
+        if (feedback) {
+          updateField.feedback = feedback;
+        }
+
+        const result = await applicationCollection.updateOne(
+          { _id: new ObjectId(id) },
+          { $set: updateField }
+        );
+        res.send({ success: true, result });
+      } catch (error) {
+        res.status(500).send({ success: false, message: error.message });
       }
     });
 
