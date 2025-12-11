@@ -62,6 +62,48 @@ async function run() {
         });
       }
     });
+    app.get("/users", async (req, res) => {
+      try {
+        const result = await userCollection.find().toArray();
+        res.status(201).json(result);
+      } catch (error) {
+        res.status(500).send({
+          success: false,
+          message: error.message,
+        });
+      }
+    });
+    app.patch("/users/:id", async (req, res) => {
+      try {
+        const id = req.params.id;
+        const { role } = req.body;
+        if (!role) {
+          return res.status(400).json({
+            success: false,
+            message: "Role is required",
+          });
+        }
+
+        const updateDoc = {
+          $set: {
+            role,
+          },
+        };
+        const result = await userCollection.updateOne(
+          {
+            _id: new ObjectId(id),
+          },
+          updateDoc
+        );
+        res.status(200).json({
+          success: true,
+          message: "Review updated successfully",
+          result,
+        });
+      } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+      }
+    });
     // scholarships releted api
     app.post("/scholarships", async (req, res) => {
       try {
