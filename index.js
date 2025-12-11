@@ -426,6 +426,7 @@ async function run() {
       try {
         const {
           scholarshipId,
+          scholarshipName,
           universityName,
           userName,
           userEmail,
@@ -436,6 +437,7 @@ async function run() {
 
         const reviewData = {
           scholarshipId,
+          scholarshipName,
           universityName,
           userName,
           userEmail,
@@ -458,6 +460,31 @@ async function run() {
           success: false,
           message: error.message,
         });
+      }
+    });
+    app.get("/my-reviews", async (req, res) => {
+      try {
+        const userEmail = req.query.userEmail;
+
+        if (!userEmail) {
+          return res.status(400).json({
+            success: false,
+            message: "User email missing",
+          });
+        }
+
+        const reviews = await reviewCollection
+          .find({ userEmail })
+          .sort({ reviewDate: -1 })
+          .toArray();
+
+        res.status(200).json({
+          success: true,
+          reviews,
+        });
+      } catch (error) {
+        console.log(error);
+        res.status(500).json({ success: false, message: error.message });
       }
     });
 
