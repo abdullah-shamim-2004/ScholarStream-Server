@@ -6,9 +6,39 @@ const stripe = require("stripe")(process.env.STRIPE_SECRET);
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const port = process.env.PORT || 3000;
 
+// firebase admin
+const admin = require("firebase-admin");
+
+const serviceAccount = require("./schola-stream-server-firebase-adminsdk.json");
+
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
+});
+
 // Middleware
 app.use(express.json());
 app.use(cors());
+// Firebase Middleware
+const verifyFirebaseToken = async (req, res, next) => {
+  const headerAuth = req.headers.authorization;
+  if (!headerAuth) {
+    return res.status(401).send({
+      message: "Unothorized access",
+    });
+  }
+  const token = headerAuth.split(" ")[1];
+  if (!token) {
+    return res.status(403).send("Unothorized access , There are no token.");
+  }
+  try {
+    const verify = await admin.auth().verifyIdToken(token);
+    req.token_email = verify.email;
+    next();
+  } catch (error) {
+    return res.status(401).send({ message: error });
+  }
+};
+
 // Mongodb URL
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.ixbmwio.mongodb.net/?appName=Cluster0`;
 
@@ -30,6 +60,82 @@ async function run() {
     const paymentCollection = db.collection("payments");
     const applicationCollection = db.collection("applications");
     const reviewCollection = db.collection("reviews");
+
+    // Middle ware with database access
+    // Admin verification
+    const verifyAdmin = async (req, res, next) => {
+      try {
+        const email = req.token_email;
+
+        if (!email) {
+          return res.status(401).json({
+            success: false,
+            message: "Unauthorized. Token email missing.",
+          });
+        }
+
+        const user = await userCollection.findOne({ email });
+
+        if (!user) {
+          return res.status(404).json({
+            success: false,
+            message: "User not found.",
+          });
+        }
+
+        if (user.role !== "admin") {
+          return res.status(403).json({
+            success: false,
+            message: "Forbidden access. Admin only route.",
+          });
+        }
+        next();
+      } catch (error) {
+        console.error("verifyAdmin error:", error);
+        res.status(500).json({
+          success: false,
+          message: "Internal server error.",
+        });
+      }
+    };
+
+    // Moderator verifiacation
+    const verifyModerator = async (req, res, next) => {
+      try {
+        const email = req.token_email;
+
+        if (!email) {
+          return res.status(401).json({
+            success: false,
+            message: "Unauthorized. Token email missing.",
+          });
+        }
+
+        const user = await userCollection.findOne({ email });
+
+        if (!user) {
+          return res.status(404).json({
+            success: false,
+            message: "User not found.",
+          });
+        }
+
+        if (user.role !== "moderator") {
+          return res.status(403).json({
+            success: false,
+            message: "Forbidden access. Moderator only route.",
+          });
+        }
+
+        next();
+      } catch (error) {
+        console.error("verifyModerator error:", error);
+        res.status(500).json({
+          success: false,
+          message: "Internal server error.",
+        });
+      }
+    };
 
     // User related API
     app.post("/users", async (req, res) => {
@@ -104,6 +210,18 @@ async function run() {
         res.status(500).json({ success: false, message: error.message });
       }
     });
+    app.get("/users/:email/role", async (req, res) => {
+      try {
+        const email = req.params.email;
+        if (!email) {
+          return res.status(404).send({ message: "No email found !" });
+        }
+        const user = await userCollection.findOne({ email });
+        res.status(200).send({ role: user?.role || "student" });
+      } catch (error) {
+        res.send({ message: error });
+      }
+    });
     // scholarships releted api
     app.post("/scholarships", async (req, res) => {
       try {
@@ -129,7 +247,11 @@ async function run() {
           query = { email: email };
         }
         if (search) {
-          query.scholarshipName = { $regex: search, $options: "i" };
+          query.$or = [
+            { scholarshipName: { $regex: search, $options: "i" } },
+            { universityName: { $regex: search, $options: "i" } },
+            { degree: { $regex: search, $options: "i" } },
+          ];
         }
         let cursor = scholarCollection.find(query);
         if (limit) {
