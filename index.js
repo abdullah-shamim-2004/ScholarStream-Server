@@ -9,7 +9,11 @@ const port = process.env.PORT || 3000;
 // firebase admin
 const admin = require("firebase-admin");
 
-const serviceAccount = require("./schola-stream-server-firebase-adminsdk.json");
+// index.js
+const decoded = Buffer.from(process.env.FB_SERVICE_KEY, "base64").toString(
+  "utf8"
+);
+const serviceAccount = JSON.parse(decoded);
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
@@ -241,34 +245,67 @@ async function run() {
     });
     app.get("/scholarships", async (req, res) => {
       try {
-        const { limit, sort, search, email } = req.query;
+        let {
+          limit = 8,
+          sort,
+          search = "",
+          email,
+          subject = "",
+          country = "",
+          degree = "",
+          page = 1,
+        } = req.query;
+
+        limit = parseInt(limit);
+        page = parseInt(page);
+
         let query = {};
-        if (email) {
-          query = { email: email };
-        }
-        if (search) {
+
+        if (email) query.email = email;
+        if (subject) query.subjectCategory = subject;
+        if (country) query.country = country;
+        if (degree) query.degree = degree;
+
+        if (search.trim()) {
           query.$or = [
             { scholarshipName: { $regex: search, $options: "i" } },
             { universityName: { $regex: search, $options: "i" } },
             { degree: { $regex: search, $options: "i" } },
           ];
         }
+
+        // total page
+        const total = await scholarCollection.countDocuments(query);
+
         let cursor = scholarCollection.find(query);
-        if (limit) {
-          cursor = cursor.limit(parseInt(limit));
-        }
+
+        // sorting
         if (sort === "top") {
-          cursor = cursor.sort({ rating: -1 });
+          cursor = cursor.sort({ applicationFees: 1 });
         }
-        const result = await cursor.toArray();
-        res.status(201).json(result);
+
+        //  pagination 
+        const skip = (page - 1) * limit;
+        cursor = cursor.skip(skip).limit(limit);
+
+        const scholarships = await cursor.toArray();
+
+        res.status(200).json({
+          total,
+          page,
+          limit,
+          totalPages: Math.ceil(total / limit),
+          scholarships,
+        });
       } catch (error) {
-        res.status(500).send({
+        console.error("Scholarships API Error:", error);
+        res.status(500).json({
           success: false,
           message: error.message,
         });
       }
     });
+
     app.get("/scholarships/:id", async (req, res) => {
       const id = req.params.id;
       const result = await scholarCollection.findOne({ _id: new ObjectId(id) });
