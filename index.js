@@ -243,7 +243,7 @@ async function run() {
         });
       }
     });
-    app.get("/scholarships", async (req, res) => {
+    app.get("/all-scholarships", async (req, res) => {
       try {
         let {
           limit = 8,
@@ -284,7 +284,7 @@ async function run() {
           cursor = cursor.sort({ applicationFees: 1 });
         }
 
-        //  pagination 
+        //  pagination
         const skip = (page - 1) * limit;
         cursor = cursor.skip(skip).limit(limit);
 
@@ -299,6 +299,17 @@ async function run() {
         });
       } catch (error) {
         console.error("Scholarships API Error:", error);
+        res.status(500).json({
+          success: false,
+          message: error.message,
+        });
+      }
+    });
+    app.get("/scholarships", async (req, res) => {
+      try {
+        const result = await scholarCollection.find().toArray();
+        res.status(200).json({ result });
+      } catch (error) {
         res.status(500).json({
           success: false,
           message: error.message,
@@ -370,6 +381,7 @@ async function run() {
           universityName,
           scholarshipId,
           studentEmail,
+          userName,
           applicationId,
         } = req.body;
 
@@ -395,6 +407,7 @@ async function run() {
             applicationId,
             scholarshipName,
             universityName,
+            userName,
           },
 
           success_url: `${process.env.VITE_CLIENT_URL}/payment-success?session_id={CHECKOUT_SESSION_ID}`,
@@ -456,7 +469,7 @@ async function run() {
           });
         }
         // Check duplicate payment
-        const paymentExist = await applicationCollection.findOne({
+        const paymentExist = await paymentCollection.findOne({
           transactionId,
         });
         if (paymentExist) {
@@ -472,11 +485,12 @@ async function run() {
         const applicationId = session.metadata.applicationId;
         const scholarshipName = session.metadata.scholarshipName;
         const universityName = session.metadata.universityName;
+        const userName = session.metadata.userName;
         if (applicationId) {
           const applicationExist = await applicationCollection.findOne({
             _id: new ObjectId(applicationId),
           });
-          if (applicationExist) {
+          if (applicationExist && transactionId) {
             const updateDoc = {
               $set: { paymentStatus: "paid", transactionId: transactionId },
             };
@@ -496,8 +510,8 @@ async function run() {
         // Prepare application object
         const isPaid = session.payment_status === "paid";
         const applicationData = {
-          // userId,
           userEmail: session.customer_details?.email || session.customer_email,
+          userName,
           scholarshipId,
           scholarshipName,
           universityName,
@@ -522,11 +536,11 @@ async function run() {
         }
 
         // Insert into payment history collection
-        // const paymentHistory = {
-        //   ...applicationData,
-        //   createdAt: new Date(),
-        // };
-        // const paymentResult = await paymentCollection.insertOne(paymentHistory);
+        const paymentHistory = {
+          ...applicationData,
+          createdAt: new Date(),
+        };
+        const paymentResult = await paymentCollection.insertOne(paymentHistory);
       } catch (error) {
         console.log("Payment verify error:", error);
         res.status(500).json({
@@ -543,6 +557,7 @@ async function run() {
           scholarshipName,
           universityName,
           userEmail,
+          userName,
           amount,
         } = req.body;
 
@@ -565,6 +580,7 @@ async function run() {
 
         const applicationData = {
           userEmail,
+          userName,
           scholarshipId,
           scholarshipName,
           universityName,
@@ -576,9 +592,10 @@ async function run() {
 
         const result = await applicationCollection.insertOne(applicationData);
 
-        return res.status(201).json({
+        res.status(201).json({
           success: true,
           message: "Unpaid application saved successfully",
+          result: applicationData,
           applicationId: result.insertedId,
         });
       } catch (error) {
@@ -736,6 +753,18 @@ async function run() {
         res.status(500).json({ success: false, message: error.message });
       }
     });
+    app.get("/reviews/:id", async (req, res) => {
+      try {
+        const scholarshipId = req.params.id;
+        const result = await reviewCollection
+          .find({ scholarshipId })
+          .sort({ reviewDate: -1 })
+          .toArray();
+        res.status(200).json(result);
+      } catch (error) {
+        res.status(403).send({ message: error });
+      }
+    });
     // all application api
     app.get("/all-applications", async (req, res) => {
       try {
@@ -763,6 +792,63 @@ async function run() {
         res.send({ success: true, result });
       } catch (error) {
         res.status(500).send({ success: false, message: error.message });
+      }
+    });
+    //Analytics
+    app.get("/analytics", async (req, res) => {
+      try {
+        const totalUsers = await userCollection.countDocuments();
+        const totalScholarships = await scholarCollection.countDocuments();
+        const totalRevevueResult = await applicationCollection
+          .aggregate([
+            {
+              $match: { paymentStatus: "paid" },
+            },
+            {
+              $group: {
+                _id: null,
+                totalRevenue: { $sum: "$amount" },
+              },
+            },
+          ])
+          .toArray();
+        const totalRevenue =
+          totalRevevueResult.length > 0
+            ? totalRevevueResult[0].totalRevenue
+            : 0;
+
+        const Data = await applicationCollection
+          .aggregate([
+            {
+              $group: {
+                _id: "$universityName",
+                count: { $sum: 1 },
+              },
+            },
+            {
+              $project: {
+                university: "$_id",
+                count: 1,
+                _id: 0,
+              },
+            },
+            {
+              $sort: { count: -1 },
+            },
+          ])
+          .toArray();
+
+        res.status(200).json({
+          totalUsers,
+          totalScholarships,
+          totalRevenue,
+          Data,
+        });
+      } catch (error) {
+        res.status(500).send({
+          success: false,
+          message: error.message,
+        });
       }
     });
 
