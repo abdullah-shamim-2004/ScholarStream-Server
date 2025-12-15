@@ -709,6 +709,22 @@ async function run() {
         res.status(500).json({ success: false, message: error.message });
       }
     });
+    app.get("/all-reviews", async (req, res) => {
+      try {
+        const reviews = await reviewCollection
+          .find()
+          .sort({ reviewDate: -1 })
+          .toArray();
+
+        res.status(200).json({
+          success: true,
+          reviews,
+        });
+      } catch (error) {
+        console.log(error);
+        res.status(500).json({ success: false, message: error.message });
+      }
+    });
     app.patch("/my-reviews/:id", async (req, res) => {
       try {
         const id = req.params.id;
