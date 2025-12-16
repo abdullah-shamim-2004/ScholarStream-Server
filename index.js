@@ -19,6 +19,7 @@ admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
 });
 
+
 // Middleware
 app.use(express.json());
 app.use(cors());
@@ -57,7 +58,7 @@ const client = new MongoClient(uri, {
 async function run() {
   try {
     // Connect the client to the server	(optional starting in v4.7)
-    await client.connect();
+    // await client.connect();
     const db = client.db("scholar_stream_db");
     const userCollection = db.collection("users");
     const scholarCollection = db.collection("scholarships");
@@ -172,7 +173,7 @@ async function run() {
         });
       }
     });
-    app.get("/users", async (req, res) => {
+    app.get("/users", verifyFirebaseToken, verifyAdmin, async (req, res) => {
       try {
         const result = await userCollection.find().toArray();
         res.status(201).json(result);
@@ -183,38 +184,43 @@ async function run() {
         });
       }
     });
-    app.patch("/users/:id", async (req, res) => {
-      try {
-        const id = req.params.id;
-        const { role } = req.body;
-        if (!role) {
-          return res.status(400).json({
-            success: false,
-            message: "Role is required",
-          });
-        }
+    app.patch(
+      "/users/:id",
+      verifyFirebaseToken,
+      verifyAdmin,
+      async (req, res) => {
+        try {
+          const id = req.params.id;
+          const { role } = req.body;
+          if (!role) {
+            return res.status(400).json({
+              success: false,
+              message: "Role is required",
+            });
+          }
 
-        const updateDoc = {
-          $set: {
-            role,
-          },
-        };
-        const result = await userCollection.updateOne(
-          {
-            _id: new ObjectId(id),
-          },
-          updateDoc
-        );
-        res.status(200).json({
-          success: true,
-          message: "Review updated successfully",
-          result,
-        });
-      } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
+          const updateDoc = {
+            $set: {
+              role,
+            },
+          };
+          const result = await userCollection.updateOne(
+            {
+              _id: new ObjectId(id),
+            },
+            updateDoc
+          );
+          res.status(200).json({
+            success: true,
+            message: "Review updated successfully",
+            result,
+          });
+        } catch (error) {
+          res.status(500).json({ success: false, message: error.message });
+        }
       }
-    });
-    app.get("/users/:email/role", async (req, res) => {
+    );
+    app.get("/users/:email/role", verifyFirebaseToken, async (req, res) => {
       try {
         const email = req.params.email;
         if (!email) {
@@ -227,22 +233,27 @@ async function run() {
       }
     });
     // scholarships releted api
-    app.post("/scholarships", async (req, res) => {
-      try {
-        const scholarship = req.body;
-        const result = await scholarCollection.insertOne(scholarship);
-        res.status(201).send({
-          success: true,
-          message: "User created successfully",
-          insertedId: result.insertedId,
-        });
-      } catch (error) {
-        res.status(500).send({
-          success: false,
-          message: error.message,
-        });
+    app.post(
+      "/scholarships",
+      verifyFirebaseToken,
+      verifyAdmin,
+      async (req, res) => {
+        try {
+          const scholarship = req.body;
+          const result = await scholarCollection.insertOne(scholarship);
+          res.status(201).send({
+            success: true,
+            message: "User created successfully",
+            insertedId: result.insertedId,
+          });
+        } catch (error) {
+          res.status(500).send({
+            success: false,
+            message: error.message,
+          });
+        }
       }
-    });
+    );
     app.get("/all-scholarships", async (req, res) => {
       try {
         let {
@@ -322,104 +333,120 @@ async function run() {
       const result = await scholarCollection.findOne({ _id: new ObjectId(id) });
       res.send(result);
     });
-    app.delete("/scholarships/:id", async (req, res) => {
-      try {
-        const id = req.params.id;
-        if (!id) {
-          return res.status(204).send({
+    app.delete(
+      "/scholarships/:id",
+      verifyFirebaseToken,
+      verifyAdmin,
+      async (req, res) => {
+        try {
+          const id = req.params.id;
+          if (!id) {
+            return res.status(204).send({
+              success: false,
+              message: "Don't find id ",
+            });
+          }
+          const result = await scholarCollection.deleteOne({
+            _id: new ObjectId(id),
+          });
+          res.status(200).send({
+            success: true,
+            message: result,
+          });
+        } catch (error) {
+          res.status(500).send({
             success: false,
-            message: "Don't find id ",
+            message: error.message,
           });
         }
-        const result = await scholarCollection.deleteOne({
-          _id: new ObjectId(id),
-        });
-        res.status(200).send({
-          success: true,
-          message: result,
-        });
-      } catch (error) {
-        res.status(500).send({
-          success: false,
-          message: error.message,
-        });
       }
-    });
-    app.put("/scholarships/:id", async (req, res) => {
-      try {
-        const id = req.params.id;
-        const updatedData = req.body;
+    );
+    app.put(
+      "/scholarships/:id",
+      verifyFirebaseToken,
+      verifyAdmin,
+      async (req, res) => {
+        try {
+          const id = req.params.id;
+          const updatedData = req.body;
 
-        const updateDoc = {
-          $set: updatedData,
-        };
+          const updateDoc = {
+            $set: updatedData,
+          };
 
-        const result = await scholarCollection.updateOne(
-          { _id: new ObjectId(id) },
-          updateDoc
-        );
+          const result = await scholarCollection.updateOne(
+            { _id: new ObjectId(id) },
+            updateDoc
+          );
 
-        res.send({
-          success: true,
-          message: "Scholarship updated successfully",
-          result,
-        });
-      } catch (error) {
-        res.status(500).send({
-          success: false,
-          message: error.message,
-        });
+          res.send({
+            success: true,
+            message: "Scholarship updated successfully",
+            result,
+          });
+        } catch (error) {
+          res.status(500).send({
+            success: false,
+            message: error.message,
+          });
+        }
       }
-    });
+    );
 
     // payment api
-    app.post("/create-checkout-session", async (req, res) => {
-      try {
-        const {
-          amount,
-          scholarshipName,
-          universityName,
-          scholarshipId,
-          studentEmail,
-          userName,
-          applicationId,
-        } = req.body;
-
-        const session = await stripe.checkout.sessions.create({
-          payment_method_types: ["card"],
-
-          line_items: [
-            {
-              price_data: {
-                currency: "usd",
-                product_data: { name: scholarshipName },
-                unit_amount: amount * 100,
-              },
-              quantity: 1,
-            },
-          ],
-
-          mode: "payment",
-          customer_email: studentEmail,
-
-          metadata: {
-            scholarshipId,
-            applicationId,
+    app.post(
+      "/create-checkout-session",
+      verifyFirebaseToken,
+      async (req, res) => {
+      
+        try {
+          const {
+            amount,
             scholarshipName,
             universityName,
+            scholarshipId,
+            studentEmail,
             userName,
-          },
+            applicationId,
+          } = req.body;
 
-          success_url: `${process.env.VITE_CLIENT_URL}/payment-success?session_id={CHECKOUT_SESSION_ID}`,
-          cancel_url: `${process.env.VITE_CLIENT_URL}/payment-failed`,
-        });
+          const session = await stripe.checkout.sessions.create({
+            payment_method_types: ["card"],
 
-        res.send({ url: session.url });
-      } catch (error) {
-        console.log(error);
-        res.status(500).send({ message: "Stripe session error" });
+            line_items: [
+              {
+                price_data: {
+                  currency: "usd",
+                  product_data: { name: scholarshipName },
+                  unit_amount: amount * 100,
+                },
+                quantity: 1,
+              },
+            ],
+
+            mode: "payment",
+            customer_email: studentEmail,
+
+            metadata: {
+              scholarshipId,
+              applicationId,
+              scholarshipName,
+              universityName,
+              userName,
+            },
+
+          
+            success_url: `${process.env.VITE_CLIENT_URL}/payment-success?session_id={CHECKOUT_SESSION_ID}`,
+            cancel_url: `${process.env.VITE_CLIENT_URL}/payment-failed`,
+          });
+
+          res.send({ url: session.url });
+        } catch (error) {
+          console.log(error);
+          res.status(500).send({ message: "Stripe session error" });
+        }
       }
-    });
+    );
     // If payment is succesfull , then store the data
     app.get("/payment-verify", async (req, res) => {
       try {
@@ -435,7 +462,7 @@ async function run() {
         const session = await stripe.checkout.sessions.retrieve(sessionId, {
           expand: ["line_items.data.price.product"],
         });
-        console.log("SESSION FULL:", session);
+        // console.log("SESSION FULL:", session);
 
         // validate session
         if (!session) {
@@ -550,63 +577,66 @@ async function run() {
       }
     });
     // If payment is failed then store the data as pending
-    app.post("/payment-failed-record", async (req, res) => {
-      try {
-        const {
-          scholarshipId,
-          scholarshipName,
-          universityName,
-          userEmail,
-          userName,
-          amount,
-        } = req.body;
+    app.post(
+      "/payment-failed-record",
+      async (req, res) => {
+        try {
+          const {
+            scholarshipId,
+            scholarshipName,
+            universityName,
+            userEmail,
+            userName,
+            amount,
+          } = req.body;
 
-        //  Prevent duplicate application
+          //  Prevent duplicate application
 
-        const applicationExist = await applicationCollection.findOne({
-          scholarshipId,
-          userEmail,
-        });
+          const applicationExist = await applicationCollection.findOne({
+            scholarshipId,
+            userEmail,
+          });
 
-        if (applicationExist) {
-          return res.status(409).json({
+          if (applicationExist) {
+            return res.status(409).json({
+              success: false,
+              message: "Application already exists for this user",
+              existedApplication: applicationExist,
+            });
+          }
+
+          //  Create unpaid application entry
+
+          const applicationData = {
+            userEmail,
+            userName,
+            scholarshipId,
+            scholarshipName,
+            universityName,
+            amount,
+            paymentStatus: "unpaid",
+            ApplicationStatus: "pending",
+            appliedAt: new Date(),
+          };
+
+          const result = await applicationCollection.insertOne(applicationData);
+
+          res.status(201).json({
+            success: true,
+            message: "Unpaid application saved successfully",
+            result: applicationData,
+            applicationId: result.insertedId,
+          });
+        } catch (error) {
+          return res.status(500).json({
             success: false,
-            message: "Application already exists for this user",
-            existedApplication: applicationExist,
+            message: error.message,
           });
         }
-
-        //  Create unpaid application entry
-
-        const applicationData = {
-          userEmail,
-          userName,
-          scholarshipId,
-          scholarshipName,
-          universityName,
-          amount,
-          paymentStatus: "unpaid",
-          ApplicationStatus: "pending",
-          appliedAt: new Date(),
-        };
-
-        const result = await applicationCollection.insertOne(applicationData);
-
-        res.status(201).json({
-          success: true,
-          message: "Unpaid application saved successfully",
-          result: applicationData,
-          applicationId: result.insertedId,
-        });
-      } catch (error) {
-        return res.status(500).json({
-          success: false,
-          message: error.message,
-        });
       }
-    });
+    );
     // My application api
-    app.get("/my-applications", async (req, res) => {
+    app.get("/my-applications", verifyFirebaseToken, async (req, res) => {
       try {
         const { userEmail } = req.query;
         if (!userEmail) {
@@ -629,22 +659,26 @@ async function run() {
         });
       }
     });
-    app.delete("/my-applications/:id", async (req, res) => {
-      try {
-        const id = req.params.id;
-        const result = await applicationCollection.deleteOne({
-          _id: new ObjectId(id),
-        });
-        return res.status(201).json({
-          success: true,
-          result,
-        });
-      } catch (error) {
-        return res.status(4501).json({ error: error.message });
+    app.delete(
+      "/my-applications/:id",
+      verifyFirebaseToken,
+      async (req, res) => {
+        try {
+          const id = req.params.id;
+          const result = await applicationCollection.deleteOne({
+            _id: new ObjectId(id),
+          });
+          return res.status(201).json({
+            success: true,
+            result,
+          });
+        } catch (error) {
+          return res.status(4501).json({ error: error.message });
+        }
       }
-    });
+    );
     // Review releted api
-    app.post("/my-reviews", async (req, res) => {
+    app.post("/my-reviews", verifyFirebaseToken, async (req, res) => {
       try {
         const {
           scholarshipId,
@@ -684,7 +718,7 @@ async function run() {
         });
       }
     });
-    app.get("/my-reviews", async (req, res) => {
+    app.get("/my-reviews", verifyFirebaseToken, async (req, res) => {
       try {
         const userEmail = req.query.userEmail;
 
@@ -709,23 +743,28 @@ async function run() {
         res.status(500).json({ success: false, message: error.message });
       }
     });
-    app.get("/all-reviews", async (req, res) => {
-      try {
-        const reviews = await reviewCollection
-          .find()
-          .sort({ reviewDate: -1 })
-          .toArray();
+    app.get(
+      "/all-reviews",
+      verifyFirebaseToken,
+      verifyModerator,
+      async (req, res) => {
+        try {
+          const reviews = await reviewCollection
+            .find()
+            .sort({ reviewDate: -1 })
+            .toArray();
 
-        res.status(200).json({
-          success: true,
-          reviews,
-        });
-      } catch (error) {
-        console.log(error);
-        res.status(500).json({ success: false, message: error.message });
+          res.status(200).json({
+            success: true,
+            reviews,
+          });
+        } catch (error) {
+          console.log(error);
+          res.status(500).json({ success: false, message: error.message });
+        }
       }
-    });
-    app.patch("/my-reviews/:id", async (req, res) => {
+    );
+    app.patch("/my-reviews/:id", verifyFirebaseToken, async (req, res) => {
       try {
         const id = req.params.id;
         const { rating, comment } = req.body;
@@ -752,7 +791,7 @@ async function run() {
         res.status(500).json({ success: false, message: error.message });
       }
     });
-    app.delete("/my-reviews/:id", async (req, res) => {
+    app.delete("/my-reviews/:id", verifyFirebaseToken, async (req, res) => {
       try {
         const id = req.params.id;
 
@@ -782,97 +821,112 @@ async function run() {
       }
     });
     // all application api
-    app.get("/all-applications", async (req, res) => {
-      try {
-        const result = await applicationCollection.find().toArray();
-        res.send({ success: true, applications: result });
-      } catch (error) {
-        res.status(500).send({ success: false, message: error.message });
-      }
-    });
-    // update application status
-    app.patch("/all-applications/:id", async (req, res) => {
-      try {
-        const id = req.params.id;
-        const { status, feedback } = req.body;
-        const updateField = {};
-        if (status) updateField.ApplicationStatus = status;
-        if (feedback) {
-          updateField.feedback = feedback;
+    app.get(
+      "/all-applications",
+      verifyFirebaseToken,
+      verifyModerator,
+      async (req, res) => {
+        try {
+          const result = await applicationCollection.find().toArray();
+          res.send({ success: true, applications: result });
+        } catch (error) {
+          res.status(500).send({ success: false, message: error.message });
         }
-
-        const result = await applicationCollection.updateOne(
-          { _id: new ObjectId(id) },
-          { $set: updateField }
-        );
-        res.send({ success: true, result });
-      } catch (error) {
-        res.status(500).send({ success: false, message: error.message });
       }
-    });
+    );
+    // update application status
+    app.patch(
+      "/all-applications/:id",
+      verifyFirebaseToken,
+      verifyModerator,
+      async (req, res) => {
+        try {
+          const id = req.params.id;
+          const { status, feedback } = req.body;
+          const updateField = {};
+          if (status) updateField.ApplicationStatus = status;
+          if (feedback) {
+            updateField.feedback = feedback;
+          }
+
+          const result = await applicationCollection.updateOne(
+            { _id: new ObjectId(id) },
+            { $set: updateField }
+          );
+          res.send({ success: true, result });
+        } catch (error) {
+          res.status(500).send({ success: false, message: error.message });
+        }
+      }
+    );
     //Analytics
-    app.get("/analytics", async (req, res) => {
-      try {
-        const totalUsers = await userCollection.countDocuments();
-        const totalScholarships = await scholarCollection.countDocuments();
-        const totalRevevueResult = await applicationCollection
-          .aggregate([
-            {
-              $match: { paymentStatus: "paid" },
-            },
-            {
-              $group: {
-                _id: null,
-                totalRevenue: { $sum: "$amount" },
+    app.get(
+      "/analytics",
+      verifyFirebaseToken,
+      verifyAdmin,
+      async (req, res) => {
+        try {
+          const totalUsers = await userCollection.countDocuments();
+          const totalScholarships = await scholarCollection.countDocuments();
+          const totalRevevueResult = await applicationCollection
+            .aggregate([
+              {
+                $match: { paymentStatus: "paid" },
               },
-            },
-          ])
-          .toArray();
-        const totalRevenue =
-          totalRevevueResult.length > 0
-            ? totalRevevueResult[0].totalRevenue
-            : 0;
+              {
+                $group: {
+                  _id: null,
+                  totalRevenue: { $sum: "$amount" },
+                },
+              },
+            ])
+            .toArray();
+          const totalRevenue =
+            totalRevevueResult.length > 0
+              ? totalRevevueResult[0].totalRevenue
+              : 0;
 
-        const Data = await applicationCollection
-          .aggregate([
-            {
-              $group: {
-                _id: "$universityName",
-                count: { $sum: 1 },
+          const Data = await applicationCollection
+            .aggregate([
+              {
+                $group: {
+                  _id: "$universityName",
+                  count: { $sum: 1 },
+                },
               },
-            },
-            {
-              $project: {
-                university: "$_id",
-                count: 1,
-                _id: 0,
+              {
+                $project: {
+                  university: "$_id",
+                  count: 1,
+                  _id: 0,
+                },
               },
-            },
-            {
-              $sort: { count: -1 },
-            },
-          ])
-          .toArray();
+              {
+                $sort: { count: -1 },
+              },
+            ])
+            .toArray();
 
-        res.status(200).json({
-          totalUsers,
-          totalScholarships,
-          totalRevenue,
-          Data,
-        });
-      } catch (error) {
-        res.status(500).send({
-          success: false,
-          message: error.message,
-        });
+          res.status(200).json({
+            totalUsers,
+            totalScholarships,
+            totalRevenue,
+            Data,
+          });
+        } catch (error) {
+          res.status(500).send({
+            success: false,
+            message: error.message,
+          });
+        }
       }
-    });
+    );
 
     // Send a ping to confirm a successful connection
-    await client.db("admin").command({ ping: 1 });
-    console.log(
-      "Pinged your deployment. You successfully connected to MongoDB!"
-    );
+    // await client.db("admin").command({ ping: 1 });
+    // console.log(
+    //   "Pinged your deployment. You successfully connected to MongoDB!"
+    // );
   } finally {
     // Ensures that the client will close when you finish/error
     // await client.close();
