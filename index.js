@@ -11,14 +11,13 @@ const admin = require("firebase-admin");
 
 // index.js
 const decoded = Buffer.from(process.env.FB_SERVICE_KEY, "base64").toString(
-  "utf8"
+  "utf8",
 );
 const serviceAccount = JSON.parse(decoded);
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
 });
-
 
 // Middleware
 app.use(express.json());
@@ -143,6 +142,7 @@ async function run() {
     };
 
     // User related API
+    // Add the user Info in mongodb database
     app.post("/users", async (req, res) => {
       try {
         const user = req.body;
@@ -173,9 +173,14 @@ async function run() {
         });
       }
     });
+    // Get all the user for admin
     app.get("/users", verifyFirebaseToken, verifyAdmin, async (req, res) => {
       try {
-        const result = await userCollection.find().toArray();
+        let { role = "" } = req.query;
+        let query = {};
+        if (role) query.role = role;
+
+        const result = await userCollection.find(query).toArray();
         res.status(201).json(result);
       } catch (error) {
         res.status(500).send({
@@ -184,8 +189,16 @@ async function run() {
         });
       }
     });
+    // user info update
+    app.put("/users/:id", (req, res) => {
+      try {
+      } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+      }
+    });
+    // Update User role
     app.patch(
-      "/users/:id",
+      "/users/:id/role",
       verifyFirebaseToken,
       verifyAdmin,
       async (req, res) => {
@@ -208,7 +221,7 @@ async function run() {
             {
               _id: new ObjectId(id),
             },
-            updateDoc
+            updateDoc,
           );
           res.status(200).json({
             success: true,
@@ -218,8 +231,42 @@ async function run() {
         } catch (error) {
           res.status(500).json({ success: false, message: error.message });
         }
-      }
+      },
     );
+    // Update the information
+    app.patch("/users/:id", verifyFirebaseToken, async (req, res) => {
+      try {
+        const id = req.params.id;
+        if (!id) {
+          return res.status(400).json({
+            success: false,
+            message: "Id is required.",
+          });
+        }
+        const reqData = req.body;
+        if (!reqData) {
+          return res.status(400).json({
+            success: false,
+            message: "Sorry no data found.",
+          });
+        }
+        const updateDoc = { $set: { ...reqData } };
+        const result = await userCollection.updateOne(
+          {
+            _id: new ObjectId(id),
+          },
+          updateDoc,
+        );
+        return res.status(200).json({
+          success: true,
+          message: "User updated successfully.",
+          result,
+        });
+      } catch (error) {
+        return res.send({ message: error });
+      }
+    });
+    // Get the user to identify it's role
     app.get("/users/:email/role", verifyFirebaseToken, async (req, res) => {
       try {
         const email = req.params.email;
@@ -232,6 +279,20 @@ async function run() {
         res.send({ message: error });
       }
     });
+    // Get the user for show her info in front-end
+    app.get("/users/:email", verifyFirebaseToken, async (req, res) => {
+      try {
+        const email = req.params.email;
+        if (!email) {
+          return res.status(404).send({ message: "No email found !" });
+        }
+        const user = await userCollection.findOne({ email });
+        res.status(200).send(user);
+      } catch (error) {
+        res.send({ message: error });
+      }
+    });
+
     // scholarships releted api
     app.post(
       "/scholarships",
@@ -252,7 +313,7 @@ async function run() {
             message: error.message,
           });
         }
-      }
+      },
     );
     app.get("/all-scholarships", async (req, res) => {
       try {
@@ -359,7 +420,7 @@ async function run() {
             message: error.message,
           });
         }
-      }
+      },
     );
     app.put(
       "/scholarships/:id",
@@ -376,7 +437,7 @@ async function run() {
 
           const result = await scholarCollection.updateOne(
             { _id: new ObjectId(id) },
-            updateDoc
+            updateDoc,
           );
 
           res.send({
@@ -390,7 +451,7 @@ async function run() {
             message: error.message,
           });
         }
-      }
+      },
     );
 
     // payment api
@@ -398,7 +459,6 @@ async function run() {
       "/create-checkout-session",
       verifyFirebaseToken,
       async (req, res) => {
-      
         try {
           const {
             amount,
@@ -435,7 +495,6 @@ async function run() {
               userName,
             },
 
-          
             success_url: `${process.env.VITE_CLIENT_URL}/payment-success?session_id={CHECKOUT_SESSION_ID}`,
             cancel_url: `${process.env.VITE_CLIENT_URL}/payment-failed`,
           });
@@ -445,7 +504,7 @@ async function run() {
           console.log(error);
           res.status(500).send({ message: "Stripe session error" });
         }
-      }
+      },
     );
     // If payment is succesfull , then store the data
     app.get("/payment-verify", async (req, res) => {
@@ -523,7 +582,7 @@ async function run() {
             };
             const result = await applicationCollection.updateOne(
               { _id: new ObjectId(applicationId) },
-              updateDoc
+              updateDoc,
             );
             res.send({
               success: true,
@@ -552,13 +611,13 @@ async function run() {
         };
         // Insert into applications collection
         if (!applicationId) {
-          const insertApplication = await applicationCollection.insertOne(
-            applicationData
-          );
+          const insertApplication =
+            await applicationCollection.insertOne(applicationData);
           return res.status(200).json({
             success: true,
             message: "Payment verified & application saved",
             applicationId: insertApplication.insertedId,
+            applicationData,
           });
         }
 
@@ -577,64 +636,61 @@ async function run() {
       }
     });
     // If payment is failed then store the data as pending
-    app.post(
-      "/payment-failed-record",
-      async (req, res) => {
-        try {
-          const {
-            scholarshipId,
-            scholarshipName,
-            universityName,
-            userEmail,
-            userName,
-            amount,
-          } = req.body;
+    app.post("/payment-failed-record", async (req, res) => {
+      try {
+        const {
+          scholarshipId,
+          scholarshipName,
+          universityName,
+          userEmail,
+          userName,
+          amount,
+        } = req.body;
 
-          //  Prevent duplicate application
+        //  Prevent duplicate application
 
-          const applicationExist = await applicationCollection.findOne({
-            scholarshipId,
-            userEmail,
-          });
+        const applicationExist = await applicationCollection.findOne({
+          userEmail,
+          scholarshipId,
+        });
 
-          if (applicationExist) {
-            return res.status(409).json({
-              success: false,
-              message: "Application already exists for this user",
-              existedApplication: applicationExist,
-            });
-          }
-
-          //  Create unpaid application entry
-
-          const applicationData = {
-            userEmail,
-            userName,
-            scholarshipId,
-            scholarshipName,
-            universityName,
-            amount,
-            paymentStatus: "unpaid",
-            ApplicationStatus: "pending",
-            appliedAt: new Date(),
-          };
-
-          const result = await applicationCollection.insertOne(applicationData);
-
-          res.status(201).json({
-            success: true,
-            message: "Unpaid application saved successfully",
-            result: applicationData,
-            applicationId: result.insertedId,
-          });
-        } catch (error) {
-          return res.status(500).json({
+        if (applicationExist) {
+          return res.status(409).json({
             success: false,
-            message: error.message,
+            message: "Application already exists for this user",
+            existedApplication: applicationExist,
           });
         }
+
+        //  Create unpaid application entry
+
+        const applicationData = {
+          userEmail,
+          userName,
+          scholarshipId,
+          scholarshipName,
+          universityName,
+          amount,
+          paymentStatus: "unpaid",
+          ApplicationStatus: "pending",
+          appliedAt: new Date(),
+        };
+
+        const result = await applicationCollection.insertOne(applicationData);
+
+        res.status(201).json({
+          success: true,
+          message: "Unpaid application saved successfully",
+          result: applicationData,
+          applicationId: result.insertedId,
+        });
+      } catch (error) {
+        return res.status(500).json({
+          success: false,
+          message: error.message,
+        });
       }
-    );
+    });
     // My application api
     app.get("/my-applications", verifyFirebaseToken, async (req, res) => {
       try {
@@ -675,7 +731,7 @@ async function run() {
         } catch (error) {
           return res.status(4501).json({ error: error.message });
         }
-      }
+      },
     );
     // Review releted api
     app.post("/my-reviews", verifyFirebaseToken, async (req, res) => {
@@ -762,7 +818,7 @@ async function run() {
           console.log(error);
           res.status(500).json({ success: false, message: error.message });
         }
-      }
+      },
     );
     app.patch("/my-reviews/:id", verifyFirebaseToken, async (req, res) => {
       try {
@@ -779,7 +835,7 @@ async function run() {
 
         const result = await reviewCollection.updateOne(
           { _id: new ObjectId(id) },
-          updateDoc
+          updateDoc,
         );
 
         res.status(200).json({
@@ -832,7 +888,7 @@ async function run() {
         } catch (error) {
           res.status(500).send({ success: false, message: error.message });
         }
-      }
+      },
     );
     // update application status
     app.patch(
@@ -851,13 +907,13 @@ async function run() {
 
           const result = await applicationCollection.updateOne(
             { _id: new ObjectId(id) },
-            { $set: updateField }
+            { $set: updateField },
           );
           res.send({ success: true, result });
         } catch (error) {
           res.status(500).send({ success: false, message: error.message });
         }
-      }
+      },
     );
     //Analytics
     app.get(
@@ -919,7 +975,7 @@ async function run() {
             message: error.message,
           });
         }
-      }
+      },
     );
 
     // Send a ping to confirm a successful connection
