@@ -3,6 +3,7 @@ const app = express();
 require("dotenv").config();
 const cors = require("cors");
 const stripe = require("stripe")(process.env.STRIPE_SECRET);
+// const { GoogleGenAI } = require("@google/genai");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const port = process.env.PORT || 3000;
 
@@ -141,6 +142,26 @@ async function run() {
       }
     };
 
+    const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+
+    async function main() {
+      const chatCompletion = await getGroqChatCompletion();
+      // Print the completion returned by the LLM.
+      console.log(chatCompletion.choices[0]?.message?.content || "");
+    }
+
+    async function getGroqChatCompletion() {
+      return groq.chat.completions.create({
+        messages: [
+          {
+            role: "user",
+            content: "Explain the importance of fast language models",
+          },
+        ],
+        model: "openai/gpt-oss-20b",
+      });
+    }
+    main();
     // User related API
     // Add the user Info in mongodb database
     app.post("/users", async (req, res) => {
@@ -315,6 +336,33 @@ async function run() {
         }
       },
     );
+    app.get("/api/models", async (req, res) => {
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models?key=${process.env.GEMINI_API_KEY}`,
+      );
+      const data = await response.json();
+      res.json(data);
+    });
+    // app.post("/api/chat", async (req, res) => {
+    //   try {
+    //     const response = await fetch(
+    //       `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-001:generateContent?key=${process.env.GEMINI_API_KEY}`,
+    //       {
+    //         method: "POST",
+    //         headers: { "Content-Type": "application/json" },
+    //         body: JSON.stringify(req.body),
+    //       },
+    //     );
+    //     const data = await response.json();
+    //     console.log(data);
+
+    //     return res.json(data);
+    //   } catch (err) {
+    //     res.status(500).json({ error: "AI request failed" });
+    //   }
+    // });
+    // google gemini response
+
     app.get("/all-scholarships", async (req, res) => {
       try {
         let {
