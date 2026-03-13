@@ -4,6 +4,7 @@ require("dotenv").config();
 const cors = require("cors");
 const stripe = require("stripe")(process.env.STRIPE_SECRET);
 // const { GoogleGenAI } = require("@google/genai");
+const Groq = require("groq-sdk");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const port = process.env.PORT || 3000;
 
@@ -142,26 +143,38 @@ async function run() {
       }
     };
 
-    const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+    const groq = new Groq({
+      apiKey: process.env.GROQ_API_KEY,
+    });
 
-    async function main() {
-      const chatCompletion = await getGroqChatCompletion();
-      // Print the completion returned by the LLM.
-      console.log(chatCompletion.choices[0]?.message?.content || "");
-    }
+    const SYSTEM_PROMPT = `You are Scholar AI, a friendly assistant for ScholarStream — a scholarship platform.
+Help students with: finding scholarships, writing essays, eligibility requirements, application process, deadlines.
+Be concise, warm, and encouraging. Use bullet points when listing things.`;
 
-    async function getGroqChatCompletion() {
-      return groq.chat.completions.create({
-        messages: [
-          {
-            role: "user",
-            content: "Explain the importance of fast language models",
-          },
-        ],
-        model: "openai/gpt-oss-20b",
-      });
-    }
-    main();
+    // return response.choices[0]?.message?.content;
+
+    app.post("/api/chat", async (req, res) => {
+      try {
+        const { prompt } = req.body;
+
+        if (!prompt || typeof prompt !== "string") {
+          return res.status(400).json({ error: "Invalid prompt" });
+        }
+        const response = await groq.chat.completions.create({
+          model: "llama3-8b-8192",
+          message: [{ role: "user", content: prompt }],
+        });
+
+        const reply = response.choices[0]?.message?.content;
+        return res.json({ success: true, data: reply });
+      } catch (err) {
+        console.error("Groq error:", err.message);
+        return res
+          .status(500)
+          .json({ error: "AI request failed", detail: err.message });
+      }
+    });
+
     // User related API
     // Add the user Info in mongodb database
     app.post("/users", async (req, res) => {
