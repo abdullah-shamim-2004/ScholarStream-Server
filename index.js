@@ -149,20 +149,26 @@ async function run() {
 
     const SYSTEM_PROMPT = `You are Scholar AI, a friendly assistant for ScholarStream — a scholarship platform.
 Help students with: finding scholarships, writing essays, eligibility requirements, application process, deadlines.
-Be concise, warm, and encouraging. Use bullet points when listing things.`;
+Be concise, warm, and encouraging.Keep responses under 150 words.
+Use bullet points when possible.`;
 
     // return response.choices[0]?.message?.content;
 
     app.post("/api/chat", async (req, res) => {
       try {
-        const { prompt } = req.body;
-
+        const prompt = req.body.input;
+        // console.log(prompt);
         if (!prompt || typeof prompt !== "string") {
           return res.status(400).json({ error: "Invalid prompt" });
         }
         const response = await groq.chat.completions.create({
-          model: "llama3-8b-8192",
-          message: [{ role: "user", content: prompt }],
+          model: "openai/gpt-oss-120b",
+          temperature: 0.7,
+          max_tokens: 300,
+          messages: [
+            { role: "system", content: SYSTEM_PROMPT },
+            { role: "user", content: prompt },
+          ],
         });
 
         const reply = response.choices[0]?.message?.content;
@@ -356,25 +362,6 @@ Be concise, warm, and encouraging. Use bullet points when listing things.`;
       const data = await response.json();
       res.json(data);
     });
-    // app.post("/api/chat", async (req, res) => {
-    //   try {
-    //     const response = await fetch(
-    //       `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-001:generateContent?key=${process.env.GEMINI_API_KEY}`,
-    //       {
-    //         method: "POST",
-    //         headers: { "Content-Type": "application/json" },
-    //         body: JSON.stringify(req.body),
-    //       },
-    //     );
-    //     const data = await response.json();
-    //     console.log(data);
-
-    //     return res.json(data);
-    //   } catch (err) {
-    //     res.status(500).json({ error: "AI request failed" });
-    //   }
-    // });
-    // google gemini response
 
     app.get("/all-scholarships", async (req, res) => {
       try {
